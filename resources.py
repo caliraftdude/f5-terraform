@@ -92,4 +92,93 @@ OBJLIST = [
     'MGMT.tm.sys.snmp.traps_s.get_collection()',
     ]
 
+
+provider "bigip" {
+  address = "${var.url}"
+  username = "${var.username}"
+  password = "${var.password}"
+  token_auth = "${var.token_auth}"
+  login_ref = "${var.login_ref}"
+}
+
+
+resource "bigip_cm_device" "my_new_device"
+{
+    name = "bigip300.f5.com"
+    configsync_ip = "2.2.2.2"
+    mirror_ip = "10.10.10.10"
+    mirror_secondary_ip = "11.11.11.11"
+}
+
+
+resource "bigip_cm_devicegroup" "my_new_devicegroup"
+{
+    name = "sanjose_devicegroup"
+    auto_sync = "enabled"
+    full_load_on_sync = "true"
+    type = "sync-only"
+    device  { name = "bigip1.cisco.com"}
+    device  { name = "bigip200.f5.com"}
+}
+
+resource "bigip_ltm_dns" "dns1" {
+   description = "/Common/DNS1"
+   name_servers = ["1.1.1.1"]
+   numberof_dots = 2
+   search = ["f5.com"]
+}
+
+resource "bigip_ltm_monitor" "monitor" {
+  name = "/Common/terraform_monitor"
+  parent = "/Common/http"
+  send = "GET /some/path\r\n"
+  timeout = "999"
+  interval = "999"
+  destination = "1.2.3.4:1234"
+}
+
+resource "bigip_ltm_pool" "pool" {
+  name = "/Common/terraform-pool"
+  load_balancing_mode = "round-robin"
+  monitors = ["${bigip_ltm_monitor.monitor.name}","${bigip_ltm_monitor.monitor2.name}"]
+  allow_snat = "yes"
+  allow_nat = "yes"
+}
+
+
+resource "bigip_ltm_virtual_server" "http" {
+  name = "/Common/terraform_vs_http"
+  destination = "10.12.12.12"
+  port = 80
+  pool = "/Common/the-default-pool"
+}
+
+# A Virtual server with SSL enabled
+resource "bigip_ltm_virtual_server" "https" {
+  name = "/Common/terraform_vs_https"
+  destination = "${var.vip_ip}"
+  port = 443
+  pool = "${var.pool}"
+  profiles = ["/Common/tcp","/Common/my-awesome-ssl-cert","/Common/http"]
+  source_address_translation = "automap"
+  translate_address = "enabled"
+  translate_port = "enabled"
+  vlans_disabled = true
+}
+
+# A Virtual server with separate client and server profiles
+ resource "bigip_ltm_virtual_server" "https" {
+  name = "/Common/terraform_vs_https"
+  destination = "10.255.255.254"
+  port = 443
+  client_profiles = ["/Common/clientssl"]
+  server_profiles = ["/Common/serverssl"]
+  source_address_translation = "automap"
+}
+
+
+
+
+
+
 '''

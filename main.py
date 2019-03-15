@@ -38,6 +38,9 @@ OBJLIST = [
     'tm.sys.snmp',
     ]
 
+OBJECT_LIBRARY = {}
+
+
 #################################################################
 #   Main program
 #################################################################
@@ -55,10 +58,12 @@ def main():
         sys.exit(-1)
 
     parseObjects(MGMT, log)
+    pass
 
 def parseObjects(MGMT, log):
     for OBJ in OBJLIST:
-        #title = "DEVICES" if len(nodes) > 1 else "DEVICE"
+        instance_list = []
+
         log.info("{} =================================================".format(OBJ.upper()) )
 
         # Monitors are horribly organized as tm.ltm.monitor is an Organizing Container, which meants that it only has a bunch of reference links to
@@ -67,7 +72,7 @@ def parseObjects(MGMT, log):
         if OBJ == 'tm.ltm.monitor':
 
             # This will go through some convoluted steps to extract each monitor type and pass its Collection to parseColection
-            parse_monitor_oc(MGMT, log)
+            parse_monitor_oc(MGMT, instance_list, log)
 
             # Short cut the rest of this function and continue with the loop
             continue
@@ -80,57 +85,78 @@ def parseObjects(MGMT, log):
             # tm.sys.dns throws the LazyAttributes exception while ntp and snmp throw the Attribute error
             collection = eval('MGMT.' + OBJ + '.load()')
 
-        parseCollection(collection, log)
+        parseCollection(collection, instance_list, log)
 
-def parseCollection(nodes, log):
+        OBJECT_LIBRARY[OBJ] = instance_list
+
+
+def parseCollection(nodes, instance_list, log):
  
     # Walk through the collection passed to us
     try:
 
         for node in nodes:
+            instance_dict = {}
             # For each item, walk the attributes section.  Since these can be dynamically there or not
             # depending on if configured (we can't rely on a 'none'), its best to go this way then
             # set up a complex expectation of exceptions.  The API should have been from friendly here
             try:
                 for key, value in node.attrs.iteritems():
-                    parseDictionary(key, value, log)
+                    parseDictionary(key, value, instance_dict, log)
+
             except AttributeError:
                 # Endpoints like tm.sys.provision drop straight into a resource, so we will throw an attr exception.
                 # check for this first and assume that we have a dictionary of key-value pairs already (bad assumption? monitors would fall
                 # under this case as well so to make this truely genereic you would need to determine what sort of end point you landed
                 # on and there is no way to determine that.
                 for key, value in node.iteritems():
-                    parseDictionary(key, value, log)
+                    parseDictionary(key, value, instance_dict, log)
+
+            instance_list.append(instance_dict)
+
     except TypeError:
+        instance_dict = {}
+
         # Objects like tm.sys.dns have no list but, so the iteration will throw, in this case just walk the attribute list
         # note we just use the nodes object.. subtle if you C&P this out of here.
         for key, value in nodes.attrs.iteritems():
-            parseDictionary(key, value, log)
+            parseDictionary(key, value, instance_dict, log)
+        
+        instance_list.append(instance_dict)
 
 
-def parseDictionary(key, value, log):
+def parseDictionary(key, value, instance_dict, log):
     # Determine the value type since its possible to be dict, str, number, etc..
     # This might need to be a recursive function.. will determine later...
     if type(value) is unicode:
         log.info('\t{}: {}'.format(key, value))
+        instance_dict.update({key:value})
 
     if type(value) is list:
         log.info('\t{}:'.format(key))
+        instance_dict.update({key:value})
+        
         for item in value:
             log.info('\t\t{}'.format(item))
 
     if type(value) is dict:
         log.info('\t{}:'.format(key))
+        instance_dict[key] = value
+
         for k, v in value.iteritems():
             log.info('\t\t{}: {}'.format(k, v))
 
-def parse_monitor_oc(MGMT, log):
+
+def parse_monitor_oc(MGMT, instance_list, log):
     monitors = MGMT.tm.ltm.monitor.get_collection()
     for url in monitors:
         
         # WARNING: non-pythonic code ahead...
         # strip out the monitor type from the reference link        
         monitor_t = (url['reference']['link'].split('/')[-1]).split('?')[0]
+
+        # Build a string for labeling
+        label = 'tm.ltm.monitor.' + monitor_t
 
         # For some reason there is a monitor reference to none.. skip it
         if monitor_t == 'none':
@@ -149,8 +175,10 @@ def parse_monitor_oc(MGMT, log):
         collection = eval('MGMT.tm.ltm.monitor.' +  monitor_t + '.get_collection()')
 
         # with a collection in hand we can now go back to parseCollection
-        log.info("\t{} =================================================".format('TM.LTM.MONITOR.' + monitor_t.upper()) )
-        parseCollection(collection, log)
+        log.info("\t{} =================================================".format(label.upper()) )
+        parseCollection(collection, instance_list, log)
+
+        OBJECT_LIBRARY[label] = instance_list
 
 #################################################################
 #   Misc utility Functions
