@@ -1,10 +1,16 @@
+#!/usr/bin/python
 import sys
 import logging
+import getpass
+from urlparse import urlparse
 
 from f5.bigip import ManagementRoot
 import icontrol.exceptions
 import f5.sdk_exception
 
+# The number of objects that Terrform can actually use is a small subset of the F5 cannon, so it makes sense to 
+# trim the list we will collect data on to only those we have a use for
+'''
 OBJLIST = [
     'tm.cm.devices',
     'tm.cm.device_groups',
@@ -37,17 +43,31 @@ OBJLIST = [
     'tm.sys.ntp',
     'tm.sys.snmp',
     ]
+'''
+OBJLIST = [
+    'tm.ltm.pools',
+]
 
+# The object library will be the library that has all the configuration data in it.  The top level object is a dictionary that uses
+# the above list as a key to the type of object.  That will always lead to a list of dictionaries.  The dictionaries in the list are
+# the configuration data of each instance of said object
 OBJECT_LIBRARY = {}
 
+# Use these for accessing the bigip - not sure how the tf file should use these..
+USERNAME = ""
+PASSWORD = ""
 
 #################################################################
 #   Main program
 #################################################################
 def main():
-    # Get logging object
-    log = getLogging()
-    log.setLevel(logging.INFO)
+
+
+    # global USERNAME
+    # global PASSWORD
+
+    # USERNAME = getpass.getpass(prompt="Username:\t")
+    # PASSWORD = getpass.getpass(prompt="Password:\t")
 
     # connect to the BigIP
     try:
@@ -57,10 +77,25 @@ def main():
         log.exception("Critical failure during login")
         sys.exit(-1)
 
-    parseObjects(MGMT, log)
-    pass
+    parseObjects(MGMT)
 
-def parseObjects(MGMT, log):
+
+
+    # This should be re-written to break this up into a bunch of different files..  probably a file per object-type
+    # It may also make sense to put into its own directory and put it into exception handling..
+    with open("bigip.tf", "w") as fhandle:
+        writeProvider(fhandle)
+        fhandle.flush()
+    
+    with open("tm.ltm.pools.tf", "w") as fhandle:
+        writePool(fhandle)
+        fhandle.flush()
+
+    with open("tm.ltm.virtuals.tf", "w") as fhandle:
+        writeVirtual(fhandle)
+        fhandle.flush()
+
+def parseObjects(MGMT):
     for OBJ in OBJLIST:
         instance_list = []
 
@@ -72,7 +107,7 @@ def parseObjects(MGMT, log):
         if OBJ == 'tm.ltm.monitor':
 
             # This will go through some convoluted steps to extract each monitor type and pass its Collection to parseColection
-            parse_monitor_oc(MGMT, instance_list, log)
+            parse_monitor_oc(MGMT, instance_list)
 
             # Short cut the rest of this function and continue with the loop
             continue
@@ -85,12 +120,12 @@ def parseObjects(MGMT, log):
             # tm.sys.dns throws the LazyAttributes exception while ntp and snmp throw the Attribute error
             collection = eval('MGMT.' + OBJ + '.load()')
 
-        parseCollection(collection, instance_list, log)
+        parseCollection(MGMT, collection, instance_list)
 
         OBJECT_LIBRARY[OBJ] = instance_list
 
 
-def parseCollection(nodes, instance_list, log):
+def parseCollection(MGMT, nodes, instance_list):
  
     # Walk through the collection passed to us
     try:
@@ -102,7 +137,7 @@ def parseCollection(nodes, instance_list, log):
             # set up a complex expectation of exceptions.  The API should have been from friendly here
             try:
                 for key, value in node.attrs.iteritems():
-                    parseDictionary(key, value, instance_dict, log)
+                    parseDictionary(key, value, instance_dict, node)
 
             except AttributeError:
                 # Endpoints like tm.sys.provision drop straight into a resource, so we will throw an attr exception.
@@ -110,7 +145,7 @@ def parseCollection(nodes, instance_list, log):
                 # under this case as well so to make this truely genereic you would need to determine what sort of end point you landed
                 # on and there is no way to determine that.
                 for key, value in node.iteritems():
-                    parseDictionary(key, value, instance_dict, log)
+                    parseDictionary(key, value, instance_dict, node)
 
             instance_list.append(instance_dict)
 
@@ -120,12 +155,12 @@ def parseCollection(nodes, instance_list, log):
         # Objects like tm.sys.dns have no list but, so the iteration will throw, in this case just walk the attribute list
         # note we just use the nodes object.. subtle if you C&P this out of here.
         for key, value in nodes.attrs.iteritems():
-            parseDictionary(key, value, instance_dict, log)
+            parseDictionary(key, value, instance_dict)
         
         instance_list.append(instance_dict)
 
 
-def parseDictionary(key, value, instance_dict, log):
+def parseDictionary(key, value, instance_dict, node=None):
     # Determine the value type since its possible to be dict, str, number, etc..
     # This might need to be a recursive function.. will determine later...
     if type(value) is unicode:
@@ -143,11 +178,24 @@ def parseDictionary(key, value, instance_dict, log):
         log.info('\t{}:'.format(key))
         instance_dict[key] = value
 
+        # If this is a subcollection, we will add some elements to the dictionary so it can easily be resolved later
+        if "isSubcollection" in value:
+            # Wrote this for a pool obj, no idea if it is general enough for other endpoints
+            members = node.members_s.get_collection()
+            members_list = []
+
+            # The members for a pool are under name - not sure this is universal though (not counting on it)
+            for member in members:
+                members_list.append(member.name)
+
+            # add the list into the dictinary
+            instance_dict[key]['members'] = members_list
+
         for k, v in value.iteritems():
             log.info('\t\t{}: {}'.format(k, v))
 
 
-def parse_monitor_oc(MGMT, instance_list, log):
+def parse_monitor_oc(MGMT, instance_list):
     monitors = MGMT.tm.ltm.monitor.get_collection()
     for url in monitors:
         
@@ -176,9 +224,40 @@ def parse_monitor_oc(MGMT, instance_list, log):
 
         # with a collection in hand we can now go back to parseCollection
         log.info("\t{} =================================================".format(label.upper()) )
-        parseCollection(collection, instance_list, log)
+        parseCollection(MGMT, collection, instance_list)
 
         OBJECT_LIBRARY[label] = instance_list
+
+#################################################################
+#   Terraform output routines
+#################################################################
+def writeProvider(fhandle):
+    fhandle.write("provider \"bigip\" { \n")
+    fhandle.write("\taddress = \"{}\"\n".format(OBJECT_LIBRARY["tm.cm.devices"][0]["managementIp"]) )
+    fhandle.write("\tusername = \"{}\"\n".format('${var.username}'))
+    fhandle.write("\tpassword = \"{}\"\n".format('${var.password}'))
+    fhandle.write("}\n\n")
+
+def writeMonitor(fhandle):
+    pass
+
+def writePool(fhandle):
+    for pool in OBJECT_LIBRARY["tm.ltm.pools"]:
+        fhandle.write("resource \"bigip_ltm_pool\" \"{}\" ".format(pool["name"].split("/")[-1]) )
+        fhandle.write("{ \n")
+        fhandle.write("\tname = \"{}\"\n".format(pool["name"]))
+        fhandle.write("\tallow_snat = \"{}\"\n".format(pool["allowSnat"]))
+        fhandle.write("\tallow_nat = \"{}\"\n".format(pool["allowNat"]))
+
+        if "loadBalancingMode" in pool.keys():  fhandle.write("\tload_balancing_mode = \"{}\"\n".format(pool["loadBalancingMode"]))
+        if "monitor" in pool.keys():            fhandle.write("\tmonitors = [\"{}\"]\n".format(pool["monitor"]))
+
+        fhandle.write("")
+        fhandle.write("}\n\n")
+
+def writeVirtual(fhandle):
+    pass
+
 
 #################################################################
 #   Misc utility Functions
@@ -194,4 +273,8 @@ def getLogging():
 #   Entry point
 #################################################################
 if __name__ == "__main__":
+    # Get logging object
+    log = getLogging()
+    log.setLevel(logging.INFO)
+
     main()
