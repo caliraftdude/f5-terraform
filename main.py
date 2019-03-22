@@ -242,6 +242,8 @@ def parse_monitor_oc(MGMT, instance_list):
 #   Terraform output routines
 #################################################################
 def writeProvider(fhandle):
+    fhandle.write("#  NOTE - You need to provide username and password variables\n")
+    fhandle.write("#############################################################\n")
     fhandle.write("provider \"bigip\" { \n")
     fhandle.write("\taddress = \"{}\"\n".format(OBJECT_LIBRARY["tm.cm.devices"][0]["managementIp"]) )
     fhandle.write("\tusername = \"{}\"\n".format('${var.username}'))
@@ -254,6 +256,7 @@ def writeMonitor(fhandle):
 def writePool(fhandle):
     for pool in OBJECT_LIBRARY["tm.ltm.pools"]:
         # First, write out the pool object
+        fhandle.write("# Pool {} ######################################################\n".format(pool["name"].split("/")[-1]))
         fhandle.write("resource \"bigip_ltm_pool\" \"{}\" ".format(pool["name"].split("/")[-1]) )
         fhandle.write("{ \n")
         fhandle.write("\tname = \"{}\"\n".format(pool["name"]))
@@ -277,18 +280,46 @@ def writePool(fhandle):
             # and then munge together <full path>:<port>
             ip_address = node.split(":")[0]
             port = node.split(":")[1]
+
             for i in OBJECT_LIBRARY["tm.ltm.nodes"]:
                 if i["address"] == ip_address:
                     fullpath = i["fullPath"]
                     break
 
             fhandle.write("\tnode = \"{}\"\n".format(fullpath + ":" + port))
-            fhandle.write("\n")
+            fhandle.write("}\n")
 
         fhandle.write("\n\n")
 
 def writeVirtual(fhandle):
-    pass
+    for v in OBJECT_LIBRARY["tm.ltm.virtuals"]:
+        fhandle.write("# virtual {} ###################################################\n".format(v["name"]))
+        fhandle.write("resource \"bigip_ltm_virtual_server\" \"{}\" ".format(v["name"]) )
+        fhandle.write("{ \n")
+        fhandle.write("\tname = \"{}\"\n".format(v["fullPath"]))
+        dest = v["destination"].split("/")[-1]
+        fhandle.write("\tdestination = \"{}\"\n".format(dest.split(":")[0]))
+        fhandle.write("\tport = \"{}\"\n".format(dest.split(":")[-1]))
+        
+        fhandle.write("\tsource_address_translation = \"{}\"\n".format(v["sourceAddressTranslation"]["type"]))
+        fhandle.write("\ttranslate_address = \"{}\"\n".format(v["translateAddress"]))
+        fhandle.write("\ttranslate_port = \"{}\"\n".format(v["translatePort"]))
+        fhandle.write("\tip_protocol = \"{}\"\n".format(v["ipProtocol"]))
+        fhandle.write("\t# profiles = \"{}\"\n".format("[NOT IMPLEMENTED]"))
+        fhandle.write("\t# client_profiles = \"{}\"\n".format("[NOT IMPLEMENTED]"))
+        fhandle.write("\t# server_profiles = \"{}\"\n".format("[NOT IMPLEMENTED]"))
+        fhandle.write("\tsource = \"{}\"\n".format(v["source"]))
+        fhandle.write("\t# rules = \"{}\"\n".format("[NOT IMPLEMENTED]"))
+
+        # These have some condidtional as they don't always show up in a config pull    
+        fhandle.write("\t# snatpool = \"{}\"\n".format("[NOT IMPLEMENTED]"))
+        fhandle.write("\t# vlans = \"{}\"\n".format("[NOT IMPLEMENTED]"))
+        fhandle.write("\t# vlans_enabled = \"{}\"\n".format("[NOT IMPLEMENTED]"))
+        fhandle.write("\t# vlans_disabled = \"{}\"\n".format("[NOT IMPLEMENTED]"))
+        fhandle.write("\t# persistence_profiles = \"{}\"\n".format("[NOT IMPLEMENTED]"))
+        fhandle.write("\t# fallback_persistence_profile = \"{}\"\n".format("[NOT IMPLEMENTED]"))
+
+        fhandle.write("}\n\n")
 
 
 #################################################################
