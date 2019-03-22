@@ -91,11 +91,38 @@ def main():
         writeVirtual(fhandle)
         fhandle.flush()
 
+
+
+    with open("tm.net.vlan.tf", "w") as fhandle:
+        writeVlan(fhandle)
+        fhandle.flush()
+
+    with open("tm.net.selfip.tf", "w") as fhandle:
+        writeSelfIP(fhandle)
+        fhandle.flush()
+
+    with open("tm.net.route.tf", "w") as fhandle:
+        writeRoute(fhandle)
+        fhandle.flush()
+
+    with open("tm.ltm.snat.tf", "w") as fhandle:
+        writeSnat(fhandle)
+        fhandle.flush()
+
+    with open("tm.ltm.snatpool.tf", "w") as fhandle:
+        writeSnatPool(fhandle)
+        fhandle.flush()
+
+
+
 def parseObjects(MGMT):
     for OBJ in OBJLIST:
         instance_list = []
 
         log.info("{} =================================================".format(OBJ.upper()) )
+
+        if OBJ == "tm.net.vlans":
+            pass
 
         # Monitors are horribly organized as tm.ltm.monitor is an Organizing Container, which meants that it only has a bunch of reference links to
         # monitor types in it.  This is utterly useless as the api cannot really translate that to anything, so we have to handle monitors
@@ -157,7 +184,13 @@ def parseCollection(MGMT, nodes, instance_list):
 def parseDictionary(key, value, instance_dict, node=None):
     # Determine the value type since its possible to be dict, str, number, etc..
     # This might need to be a recursive function.. will determine later...
+    # There are some strong arguments that this should be a recursive function but for now I think its okay for it not to be.
+    # Should this get used in a more comprehensive context there are good arguements to do so.
     if type(value) is unicode:
+        log.info('\t{}: {}'.format(key, value))
+        instance_dict.update({key:value})
+
+    if type(value) is int:
         log.info('\t{}: {}'.format(key, value))
         instance_dict.update({key:value})
 
@@ -193,7 +226,9 @@ def parseDictionary(key, value, instance_dict, node=None):
 
                 # The members for a pool are under name - not sure this is universal though (not counting on it)
                 for member in members:
-                    members_list.append(member.name)
+                    # XXX need to import the entire object.. tm.net.vlan is example for "interfaces"
+                    # members_list.append(member.name)
+                    members_list.append(member)
 
                 # add the list into the dictinary
                 instance_dict[key]['members'] = members_list
@@ -275,18 +310,9 @@ def writePool(fhandle):
             fhandle.write("resource \"bigip_ltm_pool_attachment\" \"{}\" ".format(pool["name"].split("/")[-1]))
             fhandle.write("{ \n")
             fhandle.write("\tpool = \"{}\"\n".format(pool["name"]))
-
-            # yet another hassle to unwind, search through the nodes so we can find the full path
-            # and then munge together <full path>:<port>
-            ip_address = node.split(":")[0]
-            port = node.split(":")[1]
-
-            for i in OBJECT_LIBRARY["tm.ltm.nodes"]:
-                if i["address"] == ip_address:
-                    fullpath = i["fullPath"]
-                    break
-
-            fhandle.write("\tnode = \"{}\"\n".format(fullpath + ":" + port))
+            
+            # Subcollections put the obj type into the list, so we need to access these a little differently
+            fhandle.write("\tnode = \"{}\"\n".format(node.fullPath + ":" + node.name.split(":")[1]))
             fhandle.write("}\n")
 
         fhandle.write("\n\n")
@@ -321,6 +347,109 @@ def writeVirtual(fhandle):
 
         fhandle.write("}\n\n")
 
+def writeVlan(fhandle):
+    for obj in OBJECT_LIBRARY["tm.net.vlans"]:
+        fhandle.write("# vlan {} ###################################################\n".format(obj["name"]))
+        fhandle.write("resource \"bigip_net_vlan\" \"{}\" ".format(obj["name"]) )
+        fhandle.write("{ \n")
+        fhandle.write("\tname = \"{}\"\n".format(obj["fullPath"]) )
+        if "tag" in obj:
+            fhandle.write("\ttag = \"{}\"\n".format(obj["tag"]) )
+
+        fhandle.write("\tinterfaces = { \n")
+        for iface in obj["interfacesReference"]["members"]:
+            fhandle.write("\t\tvlanport = \"{}\"\n".format(iface.fullPath) )
+            # BASTARDS!  The nonsense speaks for itself, I wont dignify it with a comment
+            if hasattr (iface, 'tagged'):
+                fhandle.write("\t\ttagged = \"{}\"\n".format( iface.tagged ))
+            else:
+                fhandle.write("\t\ttagged = \"{}\"\n".format(not iface.untagged))
+
+        fhandle.write("\t}\n")
+
+        fhandle.write("}\n\n")
+    
+
+def writeSelfIP(fhandle):
+    for obj in OBJECT_LIBRARY["tm.net.selfips"]:
+        fhandle.write("# selfip {} ###################################################\n".format(obj["name"]))
+        fhandle.write("resource \"bigip_net_selfip\" \"{}\" ".format(obj["name"]) )
+        fhandle.write("{ \n")
+        fhandle.write("\tname = \"{}\"\n".format(obj["fullPath"]) )
+        fhandle.write("\tip = \"{}\"\n".format(obj["address"]))
+        fhandle.write("\tvlan = \"{}\"\n".format(obj["vlan"]))
+        fhandle.write("\ttraffic_group = \"{}\"\n".format(obj["trafficGroup"]))
+
+        fhandle.write("}\n\n")
+
+  
+def writeRoute(fhandle):
+    for obj in OBJECT_LIBRARY["tm.net.routes"]:
+        fhandle.write("# route {} ###################################################\n".format(obj["name"]))
+        fhandle.write("resource \"bigip_net_route\" \"{}\" ".format(obj["name"]) )
+        fhandle.write("{ \n")
+        fhandle.write("\tname = \"{}\"\n".format(obj["name"]) )
+        fhandle.write("\tnetwork = \"{}\"\n".format(obj["network"]))
+        fhandle.write("\tgw = \"{}\"\n".format(obj["gw"]))
+
+        fhandle.write("}\n\n")
+
+def writeSnat(fhandle):
+    for obj in OBJECT_LIBRARY["tm.ltm.snats"]:
+        fhandle.write("# snat {} ###################################################\n".format(obj["name"]))
+        fhandle.write("resource \"bigip_net_snat\" \"{}\" ".format(obj["name"]) )
+        fhandle.write("{ \n")
+        fhandle.write("\tname = \"{}\"\n".format(obj["name"]) )
+        fhandle.write("\tpartition = \"{}\"\n".format(obj["partition"]) )
+        
+        fhandle.write("\torigins = [")
+        for origin in obj["origins"]:
+            fhandle.write("\"{}\",".format(origin["name"]) )
+        fhandle.write("]\n")
+        
+        fhandle.write("\tsnatpool = \"{}\"\n".format(obj["snatpool"]) )
+        fhandle.write("\tmirror = \"{}\"\n".format(obj["mirror"]) )
+        fhandle.write("\tautolasthop = \"{}\"\n".format(obj["autoLasthop"]) )            
+        fhandle.write("\tsourceport = \"{}\"\n".format(obj["sourcePort"]) )
+        
+        fhandle.write("\t#translation = \"{}\"\n".format("NOT IMPLEMENTED") )            
+        fhandle.write("\t#vlansdisabled = \"{}\"\n".format("NOT IMPLEMENTED") )
+
+        fhandle.write("\tvlans = [")
+        for vlan in obj["vlans"]:
+            fhandle.write("\"{}\",".format(vlan) )
+        fhandle.write("]\n")
+
+        fhandle.write("}\n\n")
+
+def writeSnatPool(fhandle):
+    for obj in OBJECT_LIBRARY["tm.ltm.snatpools"]:
+        fhandle.write("# snatpool {} ###################################################\n".format(obj["name"]))
+        fhandle.write("resource \"bigip_net_snatpool\" \"{}\" ".format(obj["name"]) )
+        fhandle.write("{ \n")
+        fhandle.write("\tname = \"{}\"\n".format(obj["fullPath"]) )
+
+        fhandle.write("\tmembers = [")
+        for member in obj["members"]:
+            fhandle.write("\"{}\",".format(member.split("/")[-1]))
+        fhandle.write("]\n")
+        
+        fhandle.write("}\n\n")
+
+def writeTEMPLATE(fhandle):
+    for obj in OBJECT_LIBRARY["tm.ltm.snatpools"]:
+        fhandle.write("# snatpool {} ###################################################\n".format(obj["name"]))
+        fhandle.write("resource \"bigip_net_snatpool\" \"{}\" ".format(obj["name"]) )
+        fhandle.write("{ \n")
+        fhandle.write("\tname = \"{}\"\n".format(obj["name"]) )
+        fhandle.write("\tname = \"{}\"\n".format(obj["name"]) )
+        fhandle.write("\tname = \"{}\"\n".format(obj["name"]) )            
+        fhandle.write("\tname = \"{}\"\n".format(obj["name"]) )
+        fhandle.write("\tname = \"{}\"\n".format(obj["name"]) )
+        fhandle.write("\tname = \"{}\"\n".format(obj["name"]) )            
+        fhandle.write("\tname = \"{}\"\n".format(obj["name"]) )    
+
+        fhandle.write("}\n\n")
 
 #################################################################
 #   Misc utility Functions
