@@ -10,7 +10,6 @@ import f5.sdk_exception
 
 # The number of objects that Terrform can actually use is a small subset of the F5 cannon, so it makes sense to 
 # trim the list we will collect data on to only those we have a use for
-'''
 OBJLIST = [
     'tm.cm.devices',
     'tm.cm.device_groups',
@@ -43,10 +42,7 @@ OBJLIST = [
     'tm.sys.ntp',
     'tm.sys.snmp',
     ]
-'''
-OBJLIST = [
-    'tm.ltm.pools',
-]
+
 
 # The object library will be the library that has all the configuration data in it.  The top level object is a dictionary that uses
 # the above list as a key to the type of object.  That will always lead to a list of dictionaries.  The dictionaries in the list are
@@ -128,8 +124,16 @@ def parseObjects(MGMT):
 def parseCollection(MGMT, nodes, instance_list):
  
     # Walk through the collection passed to us
-    try:
+    if type(nodes) is not list:
+        instance_dict = {}
 
+        # Objects like tm.sys.dns have no list which can cause problems in parseDictionary that needs the obj
+        # we are working with.  Pass the nodes object instead so it resolves
+        for key, value in nodes.attrs.iteritems():
+            parseDictionary(key, value, instance_dict, nodes)
+
+        instance_list.append(instance_dict)
+    else:   
         for node in nodes:
             instance_dict = {}
             # For each item, walk the attributes section.  Since these can be dynamically there or not
@@ -148,16 +152,6 @@ def parseCollection(MGMT, nodes, instance_list):
                     parseDictionary(key, value, instance_dict, node)
 
             instance_list.append(instance_dict)
-
-    except TypeError:
-        instance_dict = {}
-
-        # Objects like tm.sys.dns have no list but, so the iteration will throw, in this case just walk the attribute list
-        # note we just use the nodes object.. subtle if you C&P this out of here.
-        for key, value in nodes.attrs.iteritems():
-            parseDictionary(key, value, instance_dict)
-        
-        instance_list.append(instance_dict)
 
 
 def parseDictionary(key, value, instance_dict, node=None):
@@ -180,16 +174,32 @@ def parseDictionary(key, value, instance_dict, node=None):
 
         # If this is a subcollection, we will add some elements to the dictionary so it can easily be resolved later
         if "isSubcollection" in value:
-            # Wrote this for a pool obj, no idea if it is general enough for other endpoints
-            members = node.members_s.get_collection()
-            members_list = []
+            # This is a hassle.. we will get a link like this:
+            #       https://localhost/mgmt/tm/ltm/pool/~Common~HSL-Logging-Pool/members?ver=13.1.0.8
+            # what we need to do is strip that last element off the path (members in this case)
+            # munge the 's'/'_s' and then exec against the node to get the subcollection..
+            try:
+                url = urlparse(value['link']).path.split('/')[-1]
 
-            # The members for a pool are under name - not sure this is universal though (not counting on it)
-            for member in members:
-                members_list.append(member.name)
+                # This.. ugh..
+                if url.endswith('s'):
+                    url += '_s'
+                else:
+                    url += 's'
 
-            # add the list into the dictinary
-            instance_dict[key]['members'] = members_list
+                # Evaluate the collection using the node object and concatenating the last element and get_collection()
+                members = eval('node.' + url + '.get_collection()')
+                members_list = []
+
+                # The members for a pool are under name - not sure this is universal though (not counting on it)
+                for member in members:
+                    members_list.append(member.name)
+
+                # add the list into the dictinary
+                instance_dict[key]['members'] = members_list
+            except AttributeError:
+                # *shouldn't* get here anymore, but just in case something doesn't resolve down the road
+                pass
 
         for k, v in value.iteritems():
             log.info('\t\t{}: {}'.format(k, v))
@@ -243,6 +253,7 @@ def writeMonitor(fhandle):
 
 def writePool(fhandle):
     for pool in OBJECT_LIBRARY["tm.ltm.pools"]:
+        # First, write out the pool object
         fhandle.write("resource \"bigip_ltm_pool\" \"{}\" ".format(pool["name"].split("/")[-1]) )
         fhandle.write("{ \n")
         fhandle.write("\tname = \"{}\"\n".format(pool["name"]))
@@ -254,6 +265,27 @@ def writePool(fhandle):
 
         fhandle.write("")
         fhandle.write("}\n\n")
+
+        # I am not sure why they chose to detach the node members from the pool declaration, so do the attachment
+        # object directly after the pool.  The way its declared is a pita.. so we need to do a little tap-dancing too..
+        for node in pool["membersReference"]["members"]:
+            fhandle.write("resource \"bigip_ltm_pool_attachment\" \"{}\" ".format(pool["name"].split("/")[-1]))
+            fhandle.write("{ \n")
+            fhandle.write("\tpool = \"{}\"\n".format(pool["name"]))
+
+            # yet another hassle to unwind, search through the nodes so we can find the full path
+            # and then munge together <full path>:<port>
+            ip_address = node.split(":")[0]
+            port = node.split(":")[1]
+            for i in OBJECT_LIBRARY["tm.ltm.nodes"]:
+                if i["address"] == ip_address:
+                    fullpath = i["fullPath"]
+                    break
+
+            fhandle.write("\tnode = \"{}\"\n".format(fullpath + ":" + port))
+            fhandle.write("\n")
+
+        fhandle.write("\n\n")
 
 def writeVirtual(fhandle):
     pass
