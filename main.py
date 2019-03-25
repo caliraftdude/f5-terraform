@@ -1,4 +1,30 @@
 #!/usr/bin/python
+########################################################################################
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this
+# software and associated documentation files(the "Software"), to deal in the Software 
+# without restriction, including without l > imitation the rights to use, copy, modify, 
+# merge, publish, distribute, sublicense, and/or sell copies of the Software, and to 
+# permit persons to whom the Software is furnished to do so, subject to the following 
+# conditions:
+#
+# The above copyright notice and this permission notice shall be included in all 
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A 
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
+# CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE 
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+########################################################################################
+# f5-terraform
+#
+# author:   Dan Holland
+# date:     2019.03.25
+# purpose:  Conversion tool to connect to a big-ip, parse down the config and then write
+#           out Terraform plan files.
+########################################################################################
+
 import sys
 import os
 import logging
@@ -78,9 +104,6 @@ def main():
         if not check_ping(DEVICE):
             log.exception("Unable to ping IP of device")
             sys.exit(-1)
-
-        
-
 
         MGMT = ManagementRoot(DEVICE, USERNAME, PASSWORD)
 
