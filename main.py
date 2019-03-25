@@ -1,5 +1,6 @@
 #!/usr/bin/python
 import sys
+import os
 import logging
 import getpass
 from urlparse import urlparse
@@ -59,146 +60,171 @@ PASSWORD = ""
 def main():
 
 
-    # global USERNAME
-    # global PASSWORD
+    global USERNAME
+    global PASSWORD
+    test = 0
 
-    # USERNAME = getpass.getpass(prompt="Username:\t")
-    # PASSWORD = getpass.getpass(prompt="Password:\t")
+    if not test:
+        USERNAME = getpass.getpass(prompt="Username:\t")
+        PASSWORD = getpass.getpass(prompt="Password:\t")
+        DEVICE = raw_input("IP Address of device to copy config from: ")
+    else:
+        USERNAME = "admin"
+        PASSWORD = "admin"
+        DEVICE = "10.1.1.241"
 
     # connect to the BigIP
     try:
-        MGMT = ManagementRoot("10.1.1.241", "admin", "admin")
+        if not check_ping(DEVICE):
+            log.exception("Unable to ping IP of device")
+            sys.exit(-1)
+
+        
+
+
+        MGMT = ManagementRoot(DEVICE, USERNAME, PASSWORD)
 
     except icontrol.exceptions.iControlUnexpectedHTTPError:
         log.exception("Critical failure during login")
         sys.exit(-1)
 
     parseObjects(MGMT)
+    log.info("Device successfully parsed...")
+
+    # Create output directory
+    try:
+        path = os.getcwd()
+        path += "/TF-" + DEVICE
+        os.mkdir(path)
+        path += "/"
+
+    except OSError:
+        log.exception("Unable to create output directory (permissions issue?)")
 
 
     # This should be re-written to break this up into a bunch of different files..  probably a file per object-type
     # It may also make sense to put into its own directory and put it into exception handling..
-    with open("bigip.tf", "w") as fhandle:
+    with open(path+"bigip.tf", "w") as fhandle:
         writeProvider(fhandle)
         fhandle.flush()
 
-    with open("tm.cm.devices.tf", "w") as fhandle:
+    with open(path+"tm.cm.devices.tf", "w") as fhandle:
         writeDevices(fhandle)
         fhandle.flush()
 
-    with open("tm.cm.device_groups.tf", "w") as fhandle:
+    with open(path+"tm.cm.device_groups.tf", "w") as fhandle:
         writeDevicesGroups(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.data_group.internals.tf", "w") as fhandle:
+    with open(path+"tm.ltm.data_group.internals.tf", "w") as fhandle:
         writeDataGroupInternals(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.rules.tf", "w") as fhandle:
+    with open(path+"tm.ltm.rules.tf", "w") as fhandle:
         writeRules(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.monitor.tf", "w") as fhandle:
+    with open(path+"tm.ltm.monitor.tf", "w") as fhandle:
         writeMonitors(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.nodes.tf", "w") as fhandle:
+    with open(path+"tm.ltm.nodes.tf", "w") as fhandle:
         writeNodes(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.persistence.cookies.tf", "w") as fhandle:
+    with open(path+"tm.ltm.persistence.cookies.tf", "w") as fhandle:
         writePersistenceCookies(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.persistence.dest_addrs.tf", "w") as fhandle:
+    with open(path+"tm.ltm.persistence.dest_addrs.tf", "w") as fhandle:
         writePersistenceDestAddr(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.persistence.source_addrs.tf", "w") as fhandle:
+    with open(path+"tm.ltm.persistence.source_addrs.tf", "w") as fhandle:
         writePersistenceSrcAddr(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.persistence.ssls.tf", "w") as fhandle:
+    with open(path+"tm.ltm.persistence.ssls.tf", "w") as fhandle:
         writePersistenceSSL(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.policys.tf", "w") as fhandle:
+    with open(path+"tm.ltm.policys.tf", "w") as fhandle:
         writePolicies(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.pools.tf", "w") as fhandle:
+    with open(path+"tm.ltm.pools.tf", "w") as fhandle:
         writePool(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.profile.fasthttps.tf", "w") as fhandle:
+    with open(path+"tm.ltm.profile.fasthttps.tf", "w") as fhandle:
         writeProfileFastHTTPS(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.profile.fastl4s.tf", "w") as fhandle:
+    with open(path+"tm.ltm.profile.fastl4s.tf", "w") as fhandle:
         writeProfileFastL4(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.profile.http2s.tf", "w") as fhandle:
+    with open(path+"tm.ltm.profile.http2s.tf", "w") as fhandle:
         writeProfileHTTP2S(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.profile.http_compressions.tf", "w") as fhandle:
+    with open(path+"tm.ltm.profile.http_compressions.tf", "w") as fhandle:
         writeHTTPCompressions(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.profile.one_connects.tf", "w") as fhandle:
+    with open(path+"tm.ltm.profile.one_connects.tf", "w") as fhandle:
         writeProfileOneConnect(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.profile.tcps.tf", "w") as fhandle:
+    with open(path+"tm.ltm.profile.tcps.tf", "w") as fhandle:
         writeProfileTCP(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.snat.tf", "w") as fhandle:
+    with open(path+"tm.ltm.snat.tf", "w") as fhandle:
         writeSnat(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.snatpool.tf", "w") as fhandle:
+    with open(path+"tm.ltm.snatpool.tf", "w") as fhandle:
         writeSnatPool(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.virtual_address_s.tf", "w") as fhandle:
+    with open(path+"tm.ltm.virtual_address_s.tf", "w") as fhandle:
         writeVirtualAddress(fhandle)
         fhandle.flush()
 
-    with open("tm.ltm.virtuals.tf", "w") as fhandle:
+    with open(path+"tm.ltm.virtuals.tf", "w") as fhandle:
         writeVirtual(fhandle)
         fhandle.flush()
 
-    with open("tm.net.route.tf", "w") as fhandle:
+    with open(path+"tm.net.route.tf", "w") as fhandle:
         writeRoute(fhandle)
         fhandle.flush()
 
-    with open("tm.net.selfip.tf", "w") as fhandle:
+    with open(path+"tm.net.selfip.tf", "w") as fhandle:
         writeSelfIP(fhandle)
         fhandle.flush()
 
-    with open("tm.net.vlan.tf", "w") as fhandle:
+    with open(path+"tm.net.vlan.tf", "w") as fhandle:
         writeVlan(fhandle)
         fhandle.flush()
 
-    with open("tm.sys.provision.tf", "w") as fhandle:
+    with open(path+"tm.sys.provision.tf", "w") as fhandle:
         writeProvision(fhandle)
         fhandle.flush()
 
-    with open("tm.sys.snmp.traps_s.tf", "w") as fhandle:
+    with open(path+"tm.sys.snmp.traps_s.tf", "w") as fhandle:
         writeSNMPTraps(fhandle)
         fhandle.flush()
 
-    with open("tm.sys.dns.tf", "w") as fhandle:
+    with open(path+"tm.sys.dns.tf", "w") as fhandle:
         writeDNS(fhandle)
         fhandle.flush()
 
-    with open("tm.sys.ntp.tf", "w") as fhandle:
+    with open(path+"tm.sys.ntp.tf", "w") as fhandle:
         writeNTP(fhandle)
         fhandle.flush()
 
-    with open("tm.sys.snmp.tf", "w") as fhandle:
+    with open(path+"tm.sys.snmp.tf", "w") as fhandle:
         writeSNMP(fhandle)
         fhandle.flush()
 
@@ -905,6 +931,14 @@ def getLogging():
     logging.basicConfig(format=FORMAT)
     return logging.getLogger('f5-terraform')
 
+def check_ping(address):
+    response = os.system("ping -c 1 " + address)
+
+    if response == 0:
+        return True
+
+    return False       
+
 
 #################################################################
 #   Entry point
@@ -912,7 +946,7 @@ def getLogging():
 if __name__ == "__main__":
     # Get logging object
     log = getLogging()
-    log.setLevel(logging.INFO)
+    log.setLevel(logging.ERROR)
 
     main()
 
