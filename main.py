@@ -71,7 +71,6 @@ OBJLIST = [
     'tm.sys.snmp',
     ]
 
-
 # The object library will be the library that has all the configuration data in it.  The top level object is a dictionary that uses
 # the above list as a key to the type of object.  That will always lead to a list of dictionaries.  The dictionaries in the list are
 # the configuration data of each instance of said object
@@ -128,8 +127,15 @@ def main():
     except OSError:
         log.exception("Unable to create output directory (permissions issue?)")
 
+    # Clever and less readable way to do this..
+    for fname, method in terraform_writer_dispatch.iteritems():
+        with open(path+fname, "w") as fhandle:
+            method(fhandle)
+            fhandle.flush()
+
+'''
     # There is probably a much more clever way to do this with arrays and strings but I am not sure if the brevity and cleverness
-    # will make it any more readable or managable
+    # will make it any more readable or managable - defintely not easier to debug...
     with open(path+"bigip.tf", "w") as fhandle:
         writeProvider(fhandle)
         fhandle.flush()
@@ -253,8 +259,7 @@ def main():
     with open(path+"tm.sys.snmp.tf", "w") as fhandle:
         writeSNMP(fhandle)
         fhandle.flush()
-
-
+'''
 
 def parseObjects(MGMT):
     for OBJ in OBJLIST:
@@ -965,6 +970,40 @@ def check_ping(address):
 
     return False       
 
+
+terraform_writer_dispatch = {
+    "bigip.tf": writeProvider,
+    "tm.cm.devices.tf": writeDevices,
+    "tm.cm.device_groups.tf": writeDevicesGroups,
+    "tm.ltm.data_group.internals.tf": writeDataGroupInternals,
+    "tm.ltm.rules.tf": writeRules,
+    "tm.ltm.monitor.tf": writeMonitors,
+    "tm.ltm.nodes.tf": writeNodes,
+    "tm.ltm.persistence.cookies.tf": writePersistenceCookies,
+    "tm.ltm.persistence.dest_addrs.tf": writePersistenceDestAddr,
+    "tm.ltm.persistence.source_addrs.tf": writePersistenceSrcAddr,
+    "tm.ltm.persistence.ssls.tf": writePersistenceSSL,
+    "tm.ltm.policys.tf": writePolicies,
+    "tm.ltm.pools.tf": writePool,
+    "tm.ltm.profile.fasthttps.tf": writeProfileFastHTTPS,
+    "tm.ltm.profile.fastl4s.tf": writeProfileFastL4,
+    "tm.ltm.profile.http2s.tf": writeProfileHTTP2S,
+    "tm.ltm.profile.http_compressions.tf": writeHTTPCompressions,
+    "tm.ltm.profile.one_connects.tf": writeProfileOneConnect,
+    "tm.ltm.profile.tcps.tf": writeProfileTCP,
+    "tm.ltm.snat.tf": writeSnat,
+    "tm.ltm.snatpool.tf": writeSnatPool,
+    "tm.ltm.virtual_address_s.tf": writeVirtualAddress,
+    "tm.ltm.virtuals.tf": writeVirtual,
+    "tm.net.route.tf": writeRoute,
+    "tm.net.selfip.tf": writeSelfIP,
+    "tm.net.vlan.tf": writeVlan,
+    "tm.sys.provision.tf": writeProvision,
+    "tm.sys.snmp.traps_s.tf": writeSNMPTraps,
+    "tm.sys.dns.tf": writeDNS,
+    "tm.sys.ntp.tf": writeNTP,
+    "tm.sys.snmp.tf": writeSNMP,
+}
 
 #################################################################
 #   Entry point
