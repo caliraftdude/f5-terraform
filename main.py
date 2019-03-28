@@ -30,6 +30,7 @@ import os
 import logging
 import getpass
 from urlparse import urlparse
+from datetime import datetime
 
 from f5.bigip import ManagementRoot
 import icontrol.exceptions
@@ -118,12 +119,14 @@ def main():
     try:
         path = os.getcwd()
         path += "/TF-" + DEVICE
+        if os.path.exists(path):
+            t = datetime.now()
+            path += '- {}{}{}-{}:{}:{}'.format(t.year, t.month, t.day, t.hour, t.minute, t.second)
         os.mkdir(path)
         path += "/"
 
     except OSError:
         log.exception("Unable to create output directory (permissions issue?)")
-
 
     # This should be re-written to break this up into a bunch of different files..  probably a file per object-type
     # It may also make sense to put into its own directory and put it into exception handling..
