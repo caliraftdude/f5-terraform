@@ -121,15 +121,15 @@ def main():
         path += "/TF-" + DEVICE
         if os.path.exists(path):
             t = datetime.now()
-            path += '- {}{}{}-{}:{}:{}'.format(t.year, t.month, t.day, t.hour, t.minute, t.second)
+            path += '-{}{}{}-{}:{}:{}'.format(t.year, t.month, t.day, t.hour, t.minute, t.second)
         os.mkdir(path)
         path += "/"
 
     except OSError:
         log.exception("Unable to create output directory (permissions issue?)")
 
-    # This should be re-written to break this up into a bunch of different files..  probably a file per object-type
-    # It may also make sense to put into its own directory and put it into exception handling..
+    # There is probably a much more clever way to do this with arrays and strings but I am not sure if the brevity and cleverness
+    # will make it any more readable or managable
     with open(path+"bigip.tf", "w") as fhandle:
         writeProvider(fhandle)
         fhandle.flush()
